@@ -68,6 +68,8 @@ const Finish = struct {
 };
 
 pub const State = struct {
+    unsafe_allow_paste_enter: bool = false,
+    first_suffix_is_enter: bool = false,
     owner: Owner = .none,
     boundary: BoundaryState = .capturing,
     unsafe_suffix_bytes: usize = 0,
@@ -102,6 +104,9 @@ pub const State = struct {
         switch (self.boundary) {
             .capturing => {},
             .end_candidate => {
+                if (self.unsafe_allow_paste_enter and self.unsafe_suffix_bytes == 0) {
+                    self.first_suffix_is_enter = byte == '\r';
+                }
                 self.unsafe_suffix_bytes +|= 1;
                 return;
             },

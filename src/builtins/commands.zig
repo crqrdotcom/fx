@@ -539,6 +539,7 @@ pub const launch_wide_options = [_]command_specs.OptionDoc{
     .{ .flag = "--add-dir <path>", .description = "" },
     .{ .flag = "--no-additional-dirs", .description = "" },
     .{ .flag = "--tool-placement <spec>", .description = "" },
+    .{ .flag = "--unsafe-allow-paste-enter", .description = "" },
 };
 
 /// The flags `fx` reads before a command or an interactive launch, in the
@@ -597,6 +598,10 @@ pub const top_level_flags = [_]TopLevelFlag{
     .{
         .usage = "--no-additional-dirs",
         .description = "Ignore saved additional directories",
+    },
+    .{
+        .usage = "--unsafe-allow-paste-enter",
+        .description = "Allow Enter immediately after an interactive composer paste; crafted clipboard text may submit the draft",
     },
     .{
         .usage = "--tool-placement <spec>",

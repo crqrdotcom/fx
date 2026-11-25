@@ -160,6 +160,7 @@ pub const LaunchModifiers = struct {
     tool_placement_overrides: []config_runtime.tool_placement.Override = &.{},
     additional_directories: [][]u8 = &.{},
     saved_directories_suppressed: bool = false,
+    unsafe_allow_paste_enter: bool = false,
     provider_override: ?model_provider.ProviderId = null,
     model_override: ?[]u8 = null,
     effort_override: ?types.ReasoningEffort = null,
@@ -518,6 +519,7 @@ const LaunchFlag = enum {
     context_limit,
     add_dir,
     no_additional_dirs,
+    unsafe_allow_paste_enter,
     tool_placement,
     provider,
     provider_order,
@@ -599,6 +601,7 @@ fn parseLaunchFlags(alloc: Allocator, args: []const [:0]const u8, comptime mode:
                 try directories.append(alloc, try alloc.dupe(u8, value));
             },
             .no_additional_dirs => modifiers.saved_directories_suppressed = true,
+            .unsafe_allow_paste_enter => modifiers.unsafe_allow_paste_enter = true,
             .provider => modifiers.provider_override = model_provider.parse(value) orelse
                 return error.InvalidProviderValue,
             .model => {

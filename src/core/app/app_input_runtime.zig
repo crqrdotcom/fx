@@ -730,7 +730,7 @@ pub fn Runtime(comptime App: type) type {
                 delivered = true;
                 switch (item) {
                     .byte => |byte| try handleTerminalByteWithLimits(app, byte, input_limits, max_prompt_history),
-                    .delivery_epoch => try settleTerminalPasteDeliveryEpochWithLimits(app, agents.screenAgentOf(app), input_limits),
+                    .delivery_epoch => try settleTerminalPasteDeliveryEpochWithLimits(app, agents.screenAgentOf(app), input_limits, max_prompt_history),
                 }
             }
             if (app.should_exit) {
@@ -808,6 +808,7 @@ pub fn Runtime(comptime App: type) type {
             app: *App,
             agent: *AppAgent,
             input_limits: paste_framing.InputLimits,
+            max_prompt_history: usize,
         ) !void {
             const paste_was_active = terminalPasteActive(app);
             if (!paste_was_active) return;
@@ -824,9 +825,12 @@ pub fn Runtime(comptime App: type) type {
                     agent,
                     input_limits.forOwner(app.input_runtime.paste.owner),
                 );
-                if (settled and !app.input_runtime.paste.active()) {
+                if (settled != .pending and !app.input_runtime.paste.active()) {
                     syncCatalogMenus(app, agent);
                     settleModelPickerDraft(app);
+                    if (settled == .replay_enter) {
+                        try handleTerminalByteWithLimits(app, '\r', input_limits, max_prompt_history);
+                    }
                 }
             }
         }
@@ -8739,6 +8743,7 @@ fn feedRoutingBytesWithLimit(app: *RoutingFakeApp, bytes: []const u8, max_input_
         app,
         agents.screenAgentOf(app),
         paste_framing.InputLimits.single(max_input_len),
+        100,
     );
 }
 
@@ -10070,6 +10075,13 @@ test "app_input_runtime keeps a paste but not a same-epoch enter after it" {
     try std.testing.expectEqualStrings("priornew", app.input_runtime.edit_state.input.items);
     try std.testing.expectEqual(@as(usize, 0), app.submitted_prompt_count);
     try std.testing.expectEqual(@as(usize, 1), app.notice_write_count);
+
+    app.input_runtime.paste.unsafe_allow_paste_enter = true;
+    try feedRoutingBytes(&app, "\x1b[200~ holds\x1b[201~\rX");
+    try std.testing.expectEqual(@as(usize, 0), app.submitted_prompt_count);
+    try feedRoutingBytes(&app, "\x1b[200~ then sends\x1b[201~\r");
+    try std.testing.expectEqual(@as(usize, 1), app.submitted_prompt_count);
+    try std.testing.expectEqualStrings("priornew holds then sends", app.submitted_prompt[0..app.submitted_prompt_len]);
 }
 
 test "app_input_runtime approval amendment accepts bracketed paste" {
@@ -10692,6 +10704,7 @@ test "app_input_runtime terminal paste pauses and resumes the resize cursor prob
         &app,
         (&app).agent(),
         paste_framing.InputLimits.single(4096),
+        100,
     );
     try std.testing.expectEqual(paste_framing.Owner.none, app.input_runtime.paste.owner);
     switch (app.terminal_input_runtime.terminal_cursor_probe.poll(std.math.maxInt(i64))) {

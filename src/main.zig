@@ -801,6 +801,7 @@ const App = struct {
             }
         }
         app.context_limits.applyCommandLine(launch.modifiers.context_limit_overrides);
+        app.input_runtime.paste.unsafe_allow_paste_enter = launch.modifiers.unsafe_allow_paste_enter;
         app.toolbox_behind = config_runtime.tool_placement.behindToolbox(app.tool_placement, launch.modifiers.tool_placement_overrides);
         // The launch profile narrowed main's tools before the tools behind
         // toolbox were placed; a tool it lists that now sits there needs
@@ -3882,6 +3883,7 @@ const App = struct {
             self,
             self.screenAgent(),
             input_limits,
+            max_prompt_history,
         );
     }
 

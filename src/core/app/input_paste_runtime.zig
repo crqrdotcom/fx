@@ -167,9 +167,12 @@ pub fn PasteEditRuntime(comptime App: type) type {
             try app.input_runtime.paste.consumeByte(app.alloc, byte);
         }
 
-        pub fn settlePasteDeliveryEpoch(app: *App, agent: *AppAgent, max_input_len: usize) !bool {
-            const finish = switch (app.input_runtime.paste.settleDeliveryEpoch()) {
-                .none => return false,
+        pub const DeliveryResult = enum { pending, finished, replay_enter };
+
+        pub fn settlePasteDeliveryEpoch(app: *App, agent: *AppAgent, max_input_len: usize) !DeliveryResult {
+            const paste = &app.input_runtime.paste;
+            const finish = switch (paste.settleDeliveryEpoch()) {
+                .none => return .pending,
                 .finish => |finish| finish,
             };
             const owner = app.input_runtime.paste.owner;
@@ -178,7 +181,18 @@ pub fn PasteEditRuntime(comptime App: type) type {
                 "paste end owner={s} bytes={d}",
                 .{ @tagName(owner), app.input_runtime.paste.byteCount() },
             );
-            // The paste is kept, but input that followed its end marker in the
+            const allow_enter = paste.unsafe_allow_paste_enter and owner == .composer and
+                finish.dropped_suffix_bytes == 1 and paste.first_suffix_is_enter and paste.overflow_bytes == 0 and
+                paste.buffer.items.len > 0 and text_utils.isModelSafeText(paste.buffer.items);
+            try finishPaste(app, agent, max_input_len);
+            if (allow_enter and app.input_runtime.input_limit_rejection.owner == null and
+                !agent.question_prompt.isActive() and !agent.approval_prompt.isActive() and
+                !authCodeEntryActive(app))
+            {
+                return .replay_enter;
+            }
+
+            // By default, input that followed the paste end marker in the
             // same delivery never runs: it may be clipboard content after an
             // end marker embedded in the paste.
             if (finish.dropped_suffix_bytes > 0) {
@@ -188,7 +202,6 @@ pub fn PasteEditRuntime(comptime App: type) type {
                     .{ @tagName(owner), finish.dropped_suffix_bytes },
                 );
             }
-            try finishPaste(app, agent, max_input_len);
             if (finish.dropped_suffix_bytes > 0) {
                 try app.writeDomainNotice(.{
                     .topic = "input",
@@ -196,7 +209,7 @@ pub fn PasteEditRuntime(comptime App: type) type {
                     .body = "Input that arrived right after the paste was ignored.",
                 }, true);
             }
-            return true;
+            return .finished;
         }
 
         /// Resets the paste after `owner` failed to take it and returns `err`.
