@@ -1,0 +1,71 @@
+name: Fork nightly
+
+on:
+  push:
+    branches: [fix/unsafe-paste-enter]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-aarch64
+            target: aarch64-macos
+            runner: macos-15
+          - platform: linux-aarch64
+            target: aarch64-linux-musl
+            runner: ubuntu-24.04-arm
+          - platform: linux-x86_64
+            target: x86_64-linux-musl
+            runner: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: "0.17.1"
+          use-cache: false
+      - name: Build and smoke-test fx
+        run: |
+          zig build -Doptimize=ReleaseSafe -Dcpu=baseline -Dtarget=${{ matrix.target }}
+          scripts/smoke-binary.sh ./zig-out/bin/fx
+      - name: Package binary and licenses
+        env:
+          ARCHIVE: fx-${{ matrix.platform }}.tar.gz
+        run: |
+          tar -czf "$ARCHIVE" LICENSE THIRD_PARTY_NOTICES.md -C zig-out/bin fx
+          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fx-${{ matrix.platform }}
+          path: fx-${{ matrix.platform }}.tar.gz*
+          if-no-files-found: error
+
+  release:
+    name: Publish nightly prerelease
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: fx-*
+          merge-multiple: true
+      - name: Verify archives and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum --check fx-*.tar.gz.sha256
+          tag="nightly-${GITHUB_SHA:0:12}"
+          gh release create "$tag" fx-*.tar.gz fx-*.tar.gz.sha256 \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --latest=false --title "$tag" \
+            --notes "ReleaseSafe binaries for $GITHUB_SHA."
